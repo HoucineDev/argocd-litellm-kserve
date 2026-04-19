@@ -28,20 +28,6 @@ spec:
                 model: anthropic/claude-sonnet-4-5-20250929
                 api_key: os.environ/ANTHROPIC_API_KEY
 
-          guardrails:
-            - guardrail_name: "input-guard"
-              litellm_params:
-                guardrail: "guardrails_ai"
-                mode: "pre_call"
-                guard_name: "input-guard"
-                api_base: "http://guardrails.model-serving.svc.cluster.local:8000"
-            - guardrail_name: "output-guard"
-              litellm_params:
-                guardrail: "guardrails_ai"
-                mode: "post_call"
-                guard_name: "output-guard"
-                api_base: "http://guardrails.model-serving.svc.cluster.local:8000"
-
           general_settings:
             master_key: os.environ/PROXY_MASTER_KEY
 
