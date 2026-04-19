@@ -1,34 +1,6 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: kserve-crd
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-  annotations:
-    argocd.argoproj.io/sync-wave: "-3"
-spec:
-  project: default
-  source:
-    repoURL: oci://ghcr.io/kserve/charts
-    chart: kserve-crd
-    targetRevision: v0.16.0
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: kserve
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-      # KServe CRDs are large — bypass the default size limit
-      - Replace=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
   name: kserve
   namespace: argocd
   finalizers:
@@ -38,27 +10,11 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: oci://ghcr.io/kserve/charts
-    chart: kserve
-    targetRevision: v0.16.0
-    helm:
-      releaseName: kserve
-      values: |
-        kserve:
-          controller:
-            # Serverless is the mode that uses Knative + scale-to-zero.
-            # Switch to "RawDeployment" if you'd rather use plain Deployments
-            # (simpler, no scale-to-zero, but lighter on the cluster).
-            deploymentMode: "Serverless"
-            resources:
-              requests:
-                cpu: 100m
-                memory: 200Mi
-        kserve-controller-manager:
-          resources:
-            requests:
-              cpu: 100m
-              memory: 200Mi
+    repoURL: https://github.com/HoucineDev/argocd-litellm-kserve.git
+    targetRevision: main
+    path: apps/manifests/kserve
+    directory:
+      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: kserve
@@ -69,3 +25,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - Replace=true
