@@ -16,25 +16,18 @@ spec:
     helm:
       releaseName: litellm
       values: |
-        # ---- LiteLLM proxy config ----
         proxy_config:
           model_list:
-            # ---- In-cluster model via KServe ----
             - model_name: local-llm
               litellm_params:
                 model: hosted_vllm/local-llm
                 api_base: http://local-llm-predictor.model-serving.svc.cluster.local/v1
                 api_key: "dummy-key"
-
-            # ---- External fallback (Anthropic) ----
             - model_name: claude-sonnet
               litellm_params:
                 model: anthropic/claude-sonnet-4-5-20250929
                 api_key: os.environ/ANTHROPIC_API_KEY
 
-          # ---- Guardrails: top-level block, NOT inside litellm_settings ----
-          # No "callbacks: [guardrails_ai]" — that was wrong and tried to import
-          # /etc/litellm/.py as a Python module.
           guardrails:
             - guardrail_name: "input-guard"
               litellm_params:
