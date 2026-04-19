@@ -41,7 +41,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/YOUR_USERNAME/argocd-litellm-kserve.git
+    repoURL: https://github.com/HoucineDev/argocd-litellm-kserve.git
     targetRevision: main
     path: apps/manifests/knative-serving
   destination:
