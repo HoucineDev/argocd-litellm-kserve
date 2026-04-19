@@ -35,16 +35,16 @@ spec:
           name: http1
       args:
         - "--port=8080"
-        - "--model={{`{{.Name}}`}}"
+        - "--model=$(MODEL_ID)"
         - "--served-model-name={{ .Values.model.name }}"
         {{- range .Values.runtime.customVllm.args }}
         - {{ . | quote }}
         {{- end }}
       env:
         - name: HF_HOME
-          value: /mnt/models/hf-cache
+          value: /tmp/hf-cache
         - name: TRANSFORMERS_CACHE
-          value: /mnt/models/hf-cache
+          value: /tmp/hf-cache
         - name: MODEL_ID
           value: {{ .Values.model.huggingfaceId | quote }}
         {{- if .Values.model.huggingfaceTokenSecret }}
@@ -63,7 +63,7 @@ spec:
           {{- include "model-serving.gpuLimits" . | nindent 10 }}
       volumeMounts:
         - name: hf-cache
-          mountPath: /mnt/models
+          mountPath: /tmp/hf-cache
       readinessProbe:
         httpGet:
           path: /health

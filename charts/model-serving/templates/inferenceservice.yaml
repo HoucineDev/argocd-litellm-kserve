@@ -6,7 +6,6 @@ metadata:
   labels:
     {{- include "model-serving.labels" . | nindent 4 }}
   annotations:
-    # Serverless mode: scale-to-zero annotations
     autoscaling.knative.dev/min-scale: "{{ .Values.autoscaling.minReplicas }}"
     autoscaling.knative.dev/max-scale: "{{ .Values.autoscaling.maxReplicas }}"
     autoscaling.knative.dev/metric: "{{ .Values.autoscaling.metric }}"
@@ -15,24 +14,17 @@ spec:
   predictor:
     model:
       modelFormat:
-        # This is the matching key with ServingRuntime.supportedModelFormats.
-        # KServe auto-picks our custom-vllm runtime (or the built-in hf runtime
-        # if runtime.type == kserve-huggingface).
         name: huggingface
       {{- if eq .Values.runtime.type "kserve-huggingface" }}
-      # Use KServe's bundled HuggingFace runtime — simpler path, less control.
       runtime: kserve-huggingfaceserver
       storageUri: "hf://{{ .Values.model.huggingfaceId }}"
       {{- else }}
-      # Use our custom ServingRuntime defined above.
       runtime: {{ include "model-serving.fullname" . }}-vllm
-      # With custom runtime and MODEL_ID env, we let vLLM pull directly from HF.
-      # Alternative: use storageUri: "hf://..." and let KServe's storage
-      # initializer download — but that adds an initContainer and complexity.
-      storageUri: "hf://{{ .Values.model.huggingfaceId }}"
+      # No storageUri — vLLM downloads directly from HF Hub via MODEL_ID env var
+      # (cached in /tmp/hf-cache). This avoids the /mnt/models collision between
+      # KServe's storage-initializer and our own hf-cache volume.
       {{- end }}
 
-      # Args specific to this InferenceService (the runtime has the base args)
       {{- if .Values.model.task }}
       args:
         - "--task={{ .Values.model.task }}"
@@ -46,7 +38,6 @@ spec:
           {{- toYaml .Values.resources.limits | nindent 10 }}
           {{- include "model-serving.gpuLimits" . | nindent 10 }}
 
-    # Pod-level scheduling
     {{- with .Values.nodeSelector }}
     nodeSelector:
       {{- toYaml . | nindent 6 }}
