@@ -1,0 +1,27 @@
+# charts/model-serving/ci/test-values.yaml
+#
+# Used by `helm lint --strict` and `helm template` smoke-tests in CI.
+# Represents the CPU path (most portable — lint runs anywhere).
+
+model:
+  name: "lint-test"
+  huggingfaceId: "Qwen/Qwen2.5-0.5B-Instruct"
+
+runtime:
+  type: "custom-vllm"
+  customVllm:
+    image: "kserve/vllmserver:v0.16.0-cpu"
+    args:
+      - "--max-model-len=512"
+      - "--device=cpu"
+      - "--enforce-eager"
+
+gpu:
+  enabled: false
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 1
+
+guardrails:
+  enabled: true

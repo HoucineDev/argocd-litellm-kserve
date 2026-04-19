@@ -1,0 +1,160 @@
+# charts/model-serving/values.yaml
+#
+# Defaults for the generic model-serving chart.
+# Override per-model with a second values file (see values-cpu.yaml, values-gpu.yaml).
+#
+# The core contract: change `model.name` to a HuggingFace repo ID, tune
+# `model.resources`, and redeploy. Everything else should just work.
+
+# ─────────────────────────────────────────────────────────────
+# Model definition — the one thing you change per model
+# ─────────────────────────────────────────────────────────────
+model:
+  # Kubernetes-safe name used for the InferenceService, Service, etc.
+  # Keep it short, DNS-1123 compliant (lowercase, alphanumeric, hyphens).
+  name: local-llm
+
+  # HuggingFace repo ID. vLLM downloads on first boot (cached in emptyDir or PVC).
+  # Small enough to run on CPU in CI / laptop:
+  #   - Qwen/Qwen2.5-0.5B-Instruct              (~1 GB, default)
+  #   - HuggingFaceTB/SmolLM2-360M-Instruct     (~750 MB)
+  #   - TinyLlama/TinyLlama-1.1B-Chat-v1.0      (~2 GB)
+  # Larger, GPU-only:
+  #   - google/gemma-3-1b-it                    (~2 GB VRAM fp16)
+  #   - meta-llama/Llama-3.2-1B-Instruct        (gated, needs HF token)
+  huggingfaceId: "Qwen/Qwen2.5-0.5B-Instruct"
+
+  # Optional: override the task. vLLM auto-detects chat vs completion; set
+  # only if you need to force it.
+  task: "generate"   # generate | embed | classify
+
+  # HuggingFace token for gated models (Llama, etc). Leave empty for open models.
+  # Create the secret separately: kubectl create secret generic hf-token \
+  #   --from-literal=HF_TOKEN=hf_xxxxx -n model-serving
+  huggingfaceTokenSecret: ""   # e.g. "hf-token"
+  huggingfaceTokenSecretKey: "HF_TOKEN"
+
+# ─────────────────────────────────────────────────────────────
+# Runtime selection: which ServingRuntime to use
+# ─────────────────────────────────────────────────────────────
+runtime:
+  # Two modes:
+  #   "kserve-huggingface" — use the KServe-shipped HuggingFace runtime
+  #                          (simple, batteries-included, less flexible)
+  #   "custom-vllm"        — deploy our own vLLM ServingRuntime
+  #                          (full control over vLLM flags — recommended)
+  type: "custom-vllm"
+
+  # Only used when type == custom-vllm
+  customVllm:
+    # GPU image (CUDA). Override in values-cpu.yaml to the CPU build.
+    image: "kserve/vllmserver:v0.16.0"
+    # vLLM CLI flags. These go into the pod's args.
+    # Tune per model:
+    #   --max-model-len: context length (lower = less KV-cache RAM)
+    #   --dtype: auto | float16 | bfloat16 | float32
+    #   --gpu-memory-utilization: 0.0–1.0 (GPU mode only)
+    #   --enforce-eager: skip CUDA graph capture (saves memory, slower)
+    args:
+      - "--max-model-len=2048"
+      - "--dtype=auto"
+      - "--gpu-memory-utilization=0.85"
+      - "--enforce-eager"
+
+# ─────────────────────────────────────────────────────────────
+# Compute resources for the predictor pod
+# ─────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: "500m"
+    memory: "2Gi"
+  limits:
+    cpu: "2"
+    memory: "6Gi"
+
+# GPU allocation — set nvidia.com/gpu to request a GPU. Overridden in values-cpu.yaml.
+gpu:
+  enabled: true
+  count: 1
+  # The resource key. Standard is nvidia.com/gpu but MIG/vGPU may differ.
+  resourceName: "nvidia.com/gpu"
+  # Optional runtimeClassName when using the nvidia-container-runtime.
+  # Leave empty if your cluster uses default runtime.
+  runtimeClassName: ""   # e.g. "nvidia"
+
+# ─────────────────────────────────────────────────────────────
+# Autoscaling (Knative-driven when KServe is in Serverless mode)
+# ─────────────────────────────────────────────────────────────
+autoscaling:
+  minReplicas: 0        # scale-to-zero; set to 1 to keep warm
+  maxReplicas: 1        # local dev: don't multiply pods
+  # Knative autoscaler metric: concurrency | rps
+  metric: "concurrency"
+  target: 10
+
+# ─────────────────────────────────────────────────────────────
+# Model-weight caching: PVC speeds up cold starts dramatically.
+# On kind you usually don't want this (storage is ephemeral anyway).
+# ─────────────────────────────────────────────────────────────
+storage:
+  type: "emptyDir"      # emptyDir | pvc
+  emptyDir:
+    sizeLimit: "10Gi"
+  pvc:
+    storageClassName: ""   # "" = cluster default
+    size: "20Gi"
+    accessMode: "ReadOnlyMany"
+
+# ─────────────────────────────────────────────────────────────
+# Guardrails AI — input/output validation service
+# ─────────────────────────────────────────────────────────────
+guardrails:
+  enabled: true
+  image: "guardrailsai/guardrails-server:latest"
+  replicas: 1
+  port: 8000
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      memory: "1Gi"
+
+  # Validator config. Guardrails expects named "guards"; we define two:
+  # one for input (PII, jailbreaks), one for output (toxicity, secrets).
+  # The actual config.py is rendered from this into a ConfigMap.
+  guards:
+    input:
+      name: "input-guard"
+      validators:
+        - type: "detect_pii"
+          on_fail: "fix"          # mask PII rather than block
+          entities: ["EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD"]
+        - type: "detect_jailbreak"
+          on_fail: "exception"    # hard block
+          threshold: 0.8
+    output:
+      name: "output-guard"
+      validators:
+        - type: "toxic_language"
+          on_fail: "exception"
+          threshold: 0.5
+        - type: "secrets_present"
+          on_fail: "fix"          # redact API keys, etc.
+
+# ─────────────────────────────────────────────────────────────
+# Deployment hygiene
+# ─────────────────────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+# Image pull secret if you're using a private registry (e.g. ECR, GHCR private)
+imagePullSecrets: []

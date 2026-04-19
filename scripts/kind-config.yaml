@@ -1,0 +1,29 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: llm-platform
+nodes:
+  - role: control-plane
+    # extraMounts lets us pass the NVIDIA libs from the WSL2 host into the
+    # kind node container. Only used in GPU mode; harmless in CPU mode.
+    extraMounts:
+      - hostPath: /usr/lib/wsl/lib
+        containerPath: /usr/lib/wsl/lib
+    extraPortMappings:
+      # ArgoCD UI (port-forwarded in practice; this is a fallback)
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      # LiteLLM proxy — direct NodePort if you prefer skipping port-forward
+      - containerPort: 30400
+        hostPort: 4000
+        protocol: TCP
+      # Knative/KServe ingress
+      - containerPort: 30081
+        hostPort: 8081
+        protocol: TCP
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"

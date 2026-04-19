@@ -1,0 +1,61 @@
+{{- if .Values.guardrails.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "model-serving.fullname" . }}-guardrails-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+    app.kubernetes.io/component: guardrails
+data:
+  # Guardrails AI config file. Loaded by `guardrails start --config-file /etc/guardrails/config.py`
+  # This creates two named guards that the LiteLLM proxy calls via the
+  # /guards/<name>/validate HTTP endpoint.
+  config.py: |
+    from guardrails import Guard
+    from guardrails.hub import (
+        DetectPII,
+        DetectJailbreak,
+        ToxicLanguage,
+        SecretsPresent,
+    )
+
+    # ─── Input guard: PII + jailbreak ───
+    input_guard = Guard(name="{{ .Values.guardrails.guards.input.name }}")
+    {{- range .Values.guardrails.guards.input.validators }}
+    {{- if eq .type "detect_pii" }}
+    input_guard.use(
+        DetectPII(
+            pii_entities={{ .entities | toJson }},
+            on_fail="{{ .on_fail }}",
+        )
+    )
+    {{- else if eq .type "detect_jailbreak" }}
+    input_guard.use(
+        DetectJailbreak(
+            threshold={{ .threshold }},
+            on_fail="{{ .on_fail }}",
+        )
+    )
+    {{- end }}
+    {{- end }}
+
+    # ─── Output guard: toxicity + secrets ───
+    output_guard = Guard(name="{{ .Values.guardrails.guards.output.name }}")
+    {{- range .Values.guardrails.guards.output.validators }}
+    {{- if eq .type "toxic_language" }}
+    output_guard.use(
+        ToxicLanguage(
+            threshold={{ .threshold }},
+            on_fail="{{ .on_fail }}",
+        )
+    )
+    {{- else if eq .type "secrets_present" }}
+    output_guard.use(
+        SecretsPresent(
+            on_fail="{{ .on_fail }}",
+        )
+    )
+    {{- end }}
+    {{- end }}
+{{- end }}

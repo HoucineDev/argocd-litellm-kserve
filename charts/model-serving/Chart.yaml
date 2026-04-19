@@ -1,0 +1,16 @@
+apiVersion: v2
+name: model-serving
+description: |
+  Generic Helm chart to deploy any HuggingFace model on KServe with vLLM,
+  fronted by a Guardrails AI service. Swap the model by changing one value.
+type: application
+version: 0.1.0
+appVersion: "0.16.0"
+keywords:
+  - kserve
+  - vllm
+  - llm
+  - guardrails
+  - litellm
+maintainers:
+  - name: exa-ai

@@ -1,0 +1,23 @@
+{{- if .Values.guardrails.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  # NOTE: hardcoded name "guardrails" matches what apps/litellm.yaml refers to
+  # (http://guardrails.model-serving.svc.cluster.local:8000).
+  # Keep these in sync if you rename.
+  name: guardrails
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+    app.kubernetes.io/component: guardrails
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.guardrails.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "model-serving.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: guardrails
+{{- end }}

@@ -1,0 +1,26 @@
+apiVersion: operator.knative.dev/v1beta1
+kind: KnativeServing
+metadata:
+  name: knative-serving
+  namespace: knative-serving
+spec:
+  # Kourier is the lightweight ingress, good for local dev.
+  # In prod swap for Istio or Contour.
+  ingress:
+    kourier:
+      enabled: true
+  config:
+    network:
+      ingress-class: "kourier.ingress.networking.knative.dev"
+    # Local dev domain. KServe will create *.example.com URLs; we resolve via
+    # Host header. See scripts/test-chat.sh.
+    domain:
+      example.com: ""
+    # Lower resource requests for laptop
+    autoscaler:
+      # Scale to zero after idle — saves RAM when nothing's hitting the model
+      enable-scale-to-zero: "true"
+      scale-to-zero-grace-period: "30s"
+      # Start small
+      min-scale: "0"
+      max-scale: "1"

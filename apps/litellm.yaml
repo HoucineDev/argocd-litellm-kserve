@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: litellm
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/berriai
+    chart: litellm-helm
+    targetRevision: "0.1.800"   # Pin — bump deliberately
+    helm:
+      releaseName: litellm
+      values: |
+        # ---- LiteLLM proxy config ----
+        # This is the config.yaml that the proxy reads on startup.
+        # Models are routed by `model_name`; the `litellm_params.model` tells
+        # LiteLLM *how* to reach it. For KServe we use the openai provider with
+        # a custom api_base pointing at the in-cluster InferenceService.
+        proxy_config:
+          model_list:
+            # ---- In-cluster model via KServe ----
+            - model_name: local-llm
+              litellm_params:
+                # 'hosted_vllm/' prefix tells LiteLLM this is a vLLM server
+                # exposing /v1/chat/completions.
+                # Service name follows KServe Serverless convention:
+                #   <isvc-name>-predictor.<namespace>.svc.cluster.local
+                # Our InferenceService is named from values.model.name = "local-llm".
+                # If you rename the model, update here to match.
+                model: hosted_vllm/local-llm
+                api_base: http://local-llm-predictor.model-serving.svc.cluster.local/v1
+                api_key: "dummy-key"   # KServe doesn't auth internally by default
+
+            # ---- External fallback (Anthropic) ----
+            # Set the ANTHROPIC_API_KEY env var via a Secret to enable
+            - model_name: claude-sonnet
+              litellm_params:
+                model: anthropic/claude-sonnet-4-5-20250929
+                api_key: os.environ/ANTHROPIC_API_KEY
+
+          # ---- Guardrails: run them as a pre/post callback ----
+          # LiteLLM can call a Guardrails AI service on every request.
+          litellm_settings:
+            callbacks: ["guardrails_ai"]
+            guardrails:
+              - guardrail_name: "input-guard"
+                litellm_params:
+                  guardrail: guardrails_ai
+                  mode: "pre_call"           # scan input before dispatch
+                  guard_name: "input-guard"
+                  api_base: "http://guardrails.model-serving.svc.cluster.local:8000"
+              - guardrail_name: "output-guard"
+                litellm_params:
+                  guardrail: guardrails_ai
+                  mode: "post_call"          # scan response before returning
+                  guard_name: "output-guard"
+                  api_base: "http://guardrails.model-serving.svc.cluster.local:8000"
+
+          general_settings:
+            master_key: os.environ/PROXY_MASTER_KEY
+
+        # ---- Chart-level settings ----
+        masterkey: "sk-litellm-local-dev-key"   # change for anything non-local
+
+        service:
+          type: NodePort
+          port: 4000
+
+        # Wire in a secret for external provider keys. Create this manually or
+        # via sealed-secrets. Empty by default — LiteLLM still starts.
+        envFromSecrets:
+          - name: litellm-external-keys
+            optional: true
+
+        # Local dev: don't need Postgres for basic chat completions
+        db:
+          deployStandalone: true
+          useExisting: false
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+
+        # Enable the built-in UI (http://localhost:4000/ui)
+        envVars:
+          UI_USERNAME: admin
+          UI_PASSWORD: admin
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: litellm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

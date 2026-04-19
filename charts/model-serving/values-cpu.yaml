@@ -1,0 +1,54 @@
+# charts/model-serving/values-cpu.yaml
+#
+# Overlay for running on CPU (no GPU).
+# Use: helm install ... -f values.yaml -f values-cpu.yaml
+#
+# Realistic on an RTX 3050 laptop in CPU mode: ~0.5B–1B model, a few tokens/sec.
+# That's enough to validate the whole pipeline (LiteLLM → Guardrails → KServe).
+
+model:
+  name: "local-llm"
+  # Smallest viable instruct model. Fits comfortably in CPU RAM.
+  huggingfaceId: "Qwen/Qwen2.5-0.5B-Instruct"
+
+runtime:
+  type: "custom-vllm"
+  customVllm:
+    # KServe's vLLM CPU image (PR #4049 merged in late 2025).
+    # If this tag doesn't exist for you, fall back to building from source
+    # or use: vllm/vllm-openai:latest-cpu
+    image: "kserve/vllmserver:v0.16.0-cpu"
+    args:
+      - "--max-model-len=1024"        # small context → smaller memory
+      - "--dtype=float32"             # CPU likes fp32
+      - "--enforce-eager"             # no CUDA graphs (we have no CUDA)
+      # NOTE: no --gpu-memory-utilization (CPU doesn't have it)
+      - "--device=cpu"
+
+resources:
+  requests:
+    cpu: "1"
+    memory: "3Gi"
+  limits:
+    cpu: "3"
+    memory: "5Gi"
+
+# CRITICAL: turn GPU off. This removes the nvidia.com/gpu resource request
+# and the runtimeClassName, which otherwise would block scheduling on kind.
+gpu:
+  enabled: false
+
+# Keep one replica warm — scale-to-zero on CPU means 3-minute cold starts
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 1
+
+# Guardrails: keep all validators enabled for realism. Small footprint.
+guardrails:
+  enabled: true
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      memory: "512Mi"

@@ -1,0 +1,92 @@
+{{- if eq .Values.runtime.type "custom-vllm" }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: {{ include "model-serving.fullname" . }}-vllm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+spec:
+  supportedModelFormats:
+    - name: huggingface
+      version: "1"
+      autoSelect: true
+      priority: 1
+
+  protocolVersions:
+    - v2
+    - v1
+
+  # IMPORTANT on runtimeClassName: it's a pod-level field. It goes HERE.
+  # If you saw a `spec.runtimeClassName` validation error earlier, it was
+  # probably placed inside containers[] or the named RuntimeClass didn't exist.
+  # Verify with: kubectl get runtimeclass
+  {{- if and .Values.gpu.enabled .Values.gpu.runtimeClassName }}
+  runtimeClassName: {{ .Values.gpu.runtimeClassName | quote }}
+  {{- end }}
+
+  containers:
+    - name: kserve-container
+      image: {{ include "model-serving.vllmImage" . }}
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 8080
+          protocol: TCP
+          name: http1
+      args:
+        - "--port=8080"
+        - "--model={{`{{.Name}}`}}"
+        - "--served-model-name={{ .Values.model.name }}"
+        {{- range .Values.runtime.customVllm.args }}
+        - {{ . | quote }}
+        {{- end }}
+      env:
+        - name: HF_HOME
+          value: /mnt/models/hf-cache
+        - name: TRANSFORMERS_CACHE
+          value: /mnt/models/hf-cache
+        - name: MODEL_ID
+          value: {{ .Values.model.huggingfaceId | quote }}
+        {{- if .Values.model.huggingfaceTokenSecret }}
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.model.huggingfaceTokenSecret }}
+              key: {{ .Values.model.huggingfaceTokenSecretKey }}
+        {{- end }}
+      resources:
+        requests:
+          {{- toYaml .Values.resources.requests | nindent 10 }}
+          {{- include "model-serving.gpuLimits" . | nindent 10 }}
+        limits:
+          {{- toYaml .Values.resources.limits | nindent 10 }}
+          {{- include "model-serving.gpuLimits" . | nindent 10 }}
+      volumeMounts:
+        - name: hf-cache
+          mountPath: /mnt/models
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        failureThreshold: 30
+        timeoutSeconds: 5
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 300
+        periodSeconds: 30
+        timeoutSeconds: 10
+
+  volumes:
+    - name: hf-cache
+      {{- if eq .Values.storage.type "pvc" }}
+      persistentVolumeClaim:
+        claimName: {{ include "model-serving.fullname" . }}-cache
+      {{- else }}
+      emptyDir:
+        sizeLimit: {{ .Values.storage.emptyDir.sizeLimit }}
+      {{- end }}
+{{- end }}

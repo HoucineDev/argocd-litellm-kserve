@@ -1,0 +1,65 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: {{ .Values.model.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+  annotations:
+    # Serverless mode: scale-to-zero annotations
+    autoscaling.knative.dev/min-scale: "{{ .Values.autoscaling.minReplicas }}"
+    autoscaling.knative.dev/max-scale: "{{ .Values.autoscaling.maxReplicas }}"
+    autoscaling.knative.dev/metric: "{{ .Values.autoscaling.metric }}"
+    autoscaling.knative.dev/target: "{{ .Values.autoscaling.target }}"
+spec:
+  predictor:
+    model:
+      modelFormat:
+        # This is the matching key with ServingRuntime.supportedModelFormats.
+        # KServe auto-picks our custom-vllm runtime (or the built-in hf runtime
+        # if runtime.type == kserve-huggingface).
+        name: huggingface
+      {{- if eq .Values.runtime.type "kserve-huggingface" }}
+      # Use KServe's bundled HuggingFace runtime — simpler path, less control.
+      runtime: kserve-huggingfaceserver
+      storageUri: "hf://{{ .Values.model.huggingfaceId }}"
+      {{- else }}
+      # Use our custom ServingRuntime defined above.
+      runtime: {{ include "model-serving.fullname" . }}-vllm
+      # With custom runtime and MODEL_ID env, we let vLLM pull directly from HF.
+      # Alternative: use storageUri: "hf://..." and let KServe's storage
+      # initializer download — but that adds an initContainer and complexity.
+      storageUri: "hf://{{ .Values.model.huggingfaceId }}"
+      {{- end }}
+
+      # Args specific to this InferenceService (the runtime has the base args)
+      {{- if .Values.model.task }}
+      args:
+        - "--task={{ .Values.model.task }}"
+      {{- end }}
+
+      resources:
+        requests:
+          {{- toYaml .Values.resources.requests | nindent 10 }}
+          {{- include "model-serving.gpuLimits" . | nindent 10 }}
+        limits:
+          {{- toYaml .Values.resources.limits | nindent 10 }}
+          {{- include "model-serving.gpuLimits" . | nindent 10 }}
+
+    # Pod-level scheduling
+    {{- with .Values.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.imagePullSecrets }}
+    imagePullSecrets:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}

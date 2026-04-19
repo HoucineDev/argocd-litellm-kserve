@@ -1,0 +1,66 @@
+{{- if .Values.guardrails.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "model-serving.fullname" . }}-guardrails
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-serving.labels" . | nindent 4 }}
+    app.kubernetes.io/component: guardrails
+spec:
+  replicas: {{ .Values.guardrails.replicas }}
+  selector:
+    matchLabels:
+      {{- include "model-serving.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: guardrails
+  template:
+    metadata:
+      labels:
+        {{- include "model-serving.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: guardrails
+      annotations:
+        # Roll the pod when the config changes
+        checksum/config: {{ include (print $.Template.BasePath "/guardrails-configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: guardrails
+          image: {{ .Values.guardrails.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - "guardrails"
+            - "start"
+            - "--config"
+            - "/etc/guardrails/config.py"
+            - "--port"
+            - "{{ .Values.guardrails.port }}"
+          ports:
+            - containerPort: {{ .Values.guardrails.port }}
+              name: http
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.guardrails.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/guardrails
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "model-serving.fullname" . }}-guardrails-config
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

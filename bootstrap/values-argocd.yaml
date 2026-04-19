@@ -1,0 +1,46 @@
+# bootstrap/values-argocd.yaml
+# Minimal, local-dev-friendly ArgoCD values.
+# For production, change insecure=false, set proper TLS, enable SSO, etc.
+
+global:
+  domain: argocd.local
+
+configs:
+  params:
+    # Allow HTTP to the server (we'll port-forward; no TLS bother locally)
+    server.insecure: true
+  cm:
+    # Let apps resolve URLs from this repo (add your Git remote after pushing)
+    url: http://localhost:8080
+    # Helm 3 is default; this is just explicit
+    timeout.reconciliation: 60s
+
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30080
+  # Lower resource asks for a laptop
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+controller:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+applicationSet:
+  enabled: true
+
+notifications:
+  enabled: false
+dex:
+  enabled: false

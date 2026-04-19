@@ -1,0 +1,61 @@
+# charts/model-serving/values-gpu.yaml
+#
+# Overlay for real GPU deployment.
+# Use: helm install ... -f values.yaml -f values-gpu.yaml
+#
+# Defaults here assume a single consumer-grade GPU (4–8 GB).
+# For production H100/A100, bump max-model-len, gpu-memory-utilization,
+# and swap in a larger model.
+
+model:
+  name: "gpu-llm"
+  # Picks that actually fit in 4 GB VRAM with vLLM overhead:
+  #   - Qwen/Qwen2.5-0.5B-Instruct            (fp16, ~1 GB VRAM)
+  #   - google/gemma-3-1b-it                  (fp16, ~2 GB VRAM, gated)
+  #   - TinyLlama/TinyLlama-1.1B-Chat-v1.0    (fp16, ~2.3 GB VRAM)
+  # For 8 GB+:
+  #   - Qwen/Qwen2.5-3B-Instruct              (fp16, ~6 GB VRAM)
+  #   - google/gemma-3-4b-it                  (AWQ, ~4 GB VRAM)
+  huggingfaceId: "Qwen/Qwen2.5-0.5B-Instruct"
+
+runtime:
+  type: "custom-vllm"
+  customVllm:
+    image: "kserve/vllmserver:v0.16.0"   # CUDA build
+    args:
+      - "--max-model-len=2048"
+      - "--dtype=auto"                   # bfloat16 on Ampere+, float16 otherwise
+      - "--gpu-memory-utilization=0.85"  # leave some room for KV cache growth
+      - "--enforce-eager"                # saves ~500MB on small GPUs
+      # Uncomment for quantized models (smaller VRAM footprint):
+      # - "--quantization=awq"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "2Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+gpu:
+  enabled: true
+  count: 1
+  resourceName: "nvidia.com/gpu"
+  # Set this to "nvidia" if your cluster uses the NVIDIA Container Runtime
+  # (standard on GPU Operator installs, and also what kind needs if you've
+  # wired up nvidia-container-toolkit into the kind node).
+  # Leave empty if your default runtime already handles GPUs.
+  runtimeClassName: "nvidia"
+
+autoscaling:
+  minReplicas: 0    # scale-to-zero is safe on GPU (frees VRAM when idle)
+  maxReplicas: 2
+
+# Use a PVC so we don't re-download 2GB of weights on every pod restart
+storage:
+  type: "pvc"
+  pvc:
+    storageClassName: ""   # cluster default
+    size: "20Gi"
+    accessMode: "ReadOnlyMany"

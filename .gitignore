@@ -1,0 +1,8 @@
+*.tgz
+charts/*/charts/
+.vscode/
+.idea/
+.DS_Store
+secrets/
+*.local.yaml
+.env

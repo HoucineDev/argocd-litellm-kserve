@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: model-serving
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Deploy after KServe CRDs + controllers exist
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/argocd-litellm-kserve.git
+    targetRevision: main
+    path: charts/model-serving
+    helm:
+      releaseName: model-serving
+      # Switch this between values-cpu.yaml and values-gpu.yaml.
+      # For Windows laptop testing, use CPU.
+      valueFiles:
+        - values.yaml
+        - values-cpu.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: model-serving
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

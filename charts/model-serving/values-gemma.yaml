@@ -1,0 +1,25 @@
+# charts/model-serving/values-gemma.yaml
+#
+# Example: deploy Gemma 3 1B instead of Qwen.
+# Gemma is gated on HuggingFace, so you need an HF token.
+#
+# Usage:
+#   kubectl create secret generic hf-token \
+#     --from-literal=HF_TOKEN=hf_xxxxx -n model-serving
+#   # then in apps/model-serving.yaml, add values-gemma.yaml to valueFiles
+#
+# This file demonstrates the "one values file = one model" contract.
+
+model:
+  name: "gemma-3-1b"
+  huggingfaceId: "google/gemma-3-1b-it"
+  huggingfaceTokenSecret: "hf-token"
+  huggingfaceTokenSecretKey: "HF_TOKEN"
+
+runtime:
+  customVllm:
+    args:
+      - "--max-model-len=4096"
+      - "--dtype=bfloat16"
+      - "--gpu-memory-utilization=0.80"
+      - "--enforce-eager"
