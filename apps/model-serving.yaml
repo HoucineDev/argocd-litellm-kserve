@@ -6,7 +6,6 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   annotations:
-    # Deploy after KServe CRDs + controllers exist
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
@@ -16,8 +15,6 @@ spec:
     path: charts/model-serving
     helm:
       releaseName: model-serving
-      # Switch this between values-cpu.yaml and values-gpu.yaml.
-      # For Windows laptop testing, use CPU.
       valueFiles:
         - values.yaml
         - values-cpu.yaml
